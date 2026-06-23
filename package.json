@@ -1,0 +1,12 @@
+{
+  "name": "latex-compiler",
+  "version": "1.0.0",
+  "description": "pdflatex compilation service for JobSeeker CV generation",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0"
+  }
+}
