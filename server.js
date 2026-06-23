@@ -27,15 +27,27 @@ app.post('/compile', (req, res) => {
 
     const id = crypto.randomUUID();
     const dir = path.join('/tmp', id);
-    fs.mkdirSync(dir);
-    const texFile = path.join(dir, 'doc.tex');
-    fs.writeFileSync(texFile, latex, 'utf8');
 
+    try {
+      fs.mkdirSync(dir);
+    } catch (e) {
+      return res.status(500).json({ error: 'Cannot create temp dir', message: e.message });
+    }
+
+    const texFile = path.join(dir, 'doc.tex');
+    try {
+      fs.writeFileSync(texFile, latex, 'utf8');
+    } catch (e) {
+      cleanup(dir);
+      return res.status(500).json({ error: 'Cannot write tex file', message: e.message });
+    }
+
+    // stdio: 'ignore' prevents pdflatex stdout/stderr from blocking the pipe buffer
     const child = spawn('pdflatex', [
       '-interaction=nonstopmode',
       `-output-directory=${dir}`,
       texFile,
-    ]);
+    ], { stdio: 'ignore' });
 
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
@@ -60,14 +72,13 @@ app.post('/compile', (req, res) => {
         ? fs.readFileSync(logPath, 'utf8').slice(-3000)
         : `pdflatex exited with code ${code}`;
       cleanup(dir);
-      console.error('[compile error]', log.slice(0, 500));
+      console.error('[compile error]', log.slice(0, 300));
       if (!res.headersSent) res.status(500).json({ error: 'Compilation failed', log });
     });
 
     child.on('error', (err) => {
       clearTimeout(timer);
       cleanup(dir);
-      console.error('[spawn error]', err.message);
       if (!res.headersSent) res.status(500).json({ error: 'pdflatex not found', message: err.message });
     });
   });
