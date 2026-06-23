@@ -1,12 +1,13 @@
 {
-  "name": "latex-compiler",
-  "version": "1.0.0",
-  "description": "pdflatex compilation service for JobSeeker CV generation",
+  "name": "cv-pdf-compiler",
+  "version": "2.0.0",
+  "description": "CV PDF generation service using Puppeteer",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.18.0"
+    "express": "^4.18.0",
+    "puppeteer-core": "^22.0.0"
   }
 }
