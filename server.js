@@ -66,7 +66,7 @@ app.post('/compile', (req, res) => {
 // Prevent unhandled rejections from crashing the server
 process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err.message);
-});
+});   
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`LaTeX compiler ready on :${PORT}`));
