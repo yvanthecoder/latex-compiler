@@ -5,12 +5,18 @@ const path = require('path');
 const crypto = require('crypto');
 
 const app = express();
-app.use(express.text({ type: '*/*', limit: '2mb' }));
+app.use(express.raw({ type: '*/*', limit: '2mb' }));
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
 app.post('/compile', (req, res) => {
-  if (!req.body || !req.body.trim()) {
+  const latex = Buffer.isBuffer(req.body)
+    ? req.body.toString('utf8')
+    : typeof req.body === 'string'
+    ? req.body
+    : '';
+
+  if (!latex.trim()) {
     return res.status(400).json({ error: 'Empty LaTeX source' });
   }
 
@@ -20,7 +26,7 @@ app.post('/compile', (req, res) => {
   try {
     fs.mkdirSync(dir);
     const texFile = path.join(dir, 'doc.tex');
-    fs.writeFileSync(texFile, req.body, 'utf8');
+    fs.writeFileSync(texFile, latex, 'utf8');
 
     // Run twice to resolve references
     execSync(
