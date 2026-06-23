@@ -10,7 +10,16 @@ app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
 app.post('/compile', (req, res) => {
   const chunks = [];
-  req.on('data', chunk => chunks.push(chunk));
+
+  req.on('error', (err) => {
+    console.error('[stream error]', err.message);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Stream error', message: err.message });
+    }
+  });
+
+  req.on('data', (chunk) => chunks.push(chunk));
+
   req.on('end', () => {
     const latex = Buffer.concat(chunks).toString('utf8');
 
@@ -28,7 +37,7 @@ app.post('/compile', (req, res) => {
 
       execSync(
         `pdflatex -interaction=nonstopmode -output-directory="${dir}" "${texFile}"`,
-        { timeout: 30000 }
+        { timeout: 25000, maxBuffer: 10 * 1024 * 1024 }
       );
 
       const pdfPath = path.join(dir, 'doc.pdf');
@@ -44,12 +53,19 @@ app.post('/compile', (req, res) => {
       const log = fs.existsSync(logPath)
         ? fs.readFileSync(logPath, 'utf8').slice(-3000)
         : err.message;
-      console.error('[compile error]', log);
-      res.status(500).json({ error: 'Compilation failed', log });
+      console.error('[compile error]', log.slice(0, 500));
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Compilation failed', log });
+      }
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+});
+
+// Prevent unhandled rejections from crashing the server
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err.message);
 });
 
 const PORT = process.env.PORT || 3000;
