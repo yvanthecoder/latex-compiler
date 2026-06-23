@@ -3,18 +3,46 @@ const puppeteer = require('puppeteer-core');
 
 const app = express();
 
-app.get('/health', (_, res) => res.json({ status: 'ok' }));
+// Single persistent browser instance — launched once, reused for every request
+let browserInstance = null;
+
+async function getBrowser() {
+  if (browserInstance && browserInstance.isConnected()) return browserInstance;
+  browserInstance = await puppeteer.launch({
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+    ],
+    headless: true,
+    timeout: 60000,
+  });
+  browserInstance.on('disconnected', () => {
+    console.log('[browser] disconnected — will relaunch on next request');
+    browserInstance = null;
+  });
+  console.log('[browser] launched');
+  return browserInstance;
+}
+
+// Pre-warm: launch browser at server start so the first request is instant
+getBrowser()
+  .then(() => console.log('[browser] ready'))
+  .catch(err => console.error('[browser] pre-warm failed:', err.message));
+
+app.get('/health', (_, res) => res.json({ status: 'ok', browser: !!browserInstance && browserInstance.isConnected() }));
 
 app.post('/compile', (req, res) => {
   const chunks = [];
   req.on('data', chunk => chunks.push(chunk));
   req.on('end', async () => {
-    let browser;
+    let page;
     try {
       const raw = Buffer.concat(chunks).toString('utf8').trim();
       if (!raw) return res.status(400).json({ error: 'Empty body' });
 
-      // Strip markdown fences if AI wrapped output in ```json ... ```
       const cleaned = raw.replace(/^```json?\s*/i, '').replace(/```\s*$/, '').trim();
       let cv;
       try {
@@ -26,14 +54,9 @@ app.post('/compile', (req, res) => {
       if (!cv.name) return res.status(400).json({ error: 'Missing cv.name' });
 
       const html = buildHtml(cv);
+      const browser = await getBrowser();
+      page = await browser.newPage();
 
-      browser = await puppeteer.launch({
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
-        headless: true,
-      });
-
-      const page = await browser.newPage();
       await page.setContent(html, { waitUntil: 'domcontentloaded' });
 
       const pdf = await page.pdf({
@@ -42,15 +65,15 @@ app.post('/compile', (req, res) => {
         margin: { top: '1.15cm', bottom: '1.15cm', left: '1.15cm', right: '1.15cm' },
       });
 
-      await browser.close();
-      browser = null;
+      await page.close();
+      page = null;
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', 'inline; filename="cv.pdf"');
       res.send(Buffer.from(pdf));
     } catch (err) {
-      console.error('[error]', err.message);
-      if (browser) { try { await browser.close(); } catch (_) {} }
+      console.error('[compile error]', err.message);
+      if (page) { try { await page.close(); } catch (_) {} }
       if (!res.headersSent) res.status(500).json({ error: err.message });
     }
   });
